@@ -38,6 +38,7 @@ import {
 } from "~/db/schema";
 import { splitRevenue, type AnalyticsRange } from "~/lib/analytics";
 import { getDiscountForCountry } from "~/lib/ppp";
+import { amountKeptAfterRefunds } from "~/lib/refunds.server";
 import {
   ANALYTICS_RANGES,
   PLATFORM_FEE_PERCENT,
@@ -256,7 +257,7 @@ function getStudentRevenue(
     .where(eq(coupons.purchaseId, purchases.id));
 
   const direct = db
-    .select({ userId: purchases.userId, paid: sum(purchases.amountPaid) })
+    .select({ userId: purchases.userId, paid: sum(amountKeptAfterRefunds) })
     .from(purchases)
     .innerJoin(courses, eq(purchases.courseId, courses.id))
     .where(
@@ -280,7 +281,7 @@ function getStudentRevenue(
       userId: coupons.redeemedByUserId,
       // Divided rather than rounded per row: the shares are summed first and
       // rounded once, so five seats out of 3333 cents still add up.
-      paid: sql<number>`sum(${purchases.amountPaid} * 1.0 / ${seatCounts.seats})`,
+      paid: sql<number>`sum(${amountKeptAfterRefunds} * 1.0 / ${seatCounts.seats})`,
     })
     .from(coupons)
     .innerJoin(purchases, eq(coupons.purchaseId, purchases.id))
@@ -318,7 +319,7 @@ function getTopBuyers(
       userId: users.id,
       name: users.name,
       email: users.email,
-      spend: sum(purchases.amountPaid),
+      spend: sum(amountKeptAfterRefunds),
       purchaseCount: count(purchases.id),
     })
     .from(purchases)
@@ -326,7 +327,7 @@ function getTopBuyers(
     .innerJoin(users, eq(users.id, purchases.userId))
     .where(purchaseScope(instructorId, range))
     .groupBy(users.id)
-    .orderBy(desc(sum(purchases.amountPaid)))
+    .orderBy(desc(sum(amountKeptAfterRefunds)))
     .limit(TOP_BUYER_LIMIT)
     .all();
 
@@ -440,7 +441,7 @@ function getRevenueOverTime(
   })`;
 
   const rows = db
-    .select({ bucket: bucketExpr, gross: sum(purchases.amountPaid) })
+    .select({ bucket: bucketExpr, gross: sum(amountKeptAfterRefunds) })
     .from(purchases)
     .innerJoin(courses, eq(purchases.courseId, courses.id))
     .where(purchaseScope(instructorId, range))
@@ -736,7 +737,7 @@ function getCourseRevenueByCountry(
   const rows = db
     .select({
       country: purchases.country,
-      gross: sum(purchases.amountPaid),
+      gross: sum(amountKeptAfterRefunds),
       purchaseCount: count(purchases.id),
     })
     .from(purchases)
@@ -888,7 +889,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
   // Gross revenue, the platform's fee and the instructor's net for the range.
   const summaryRow = db
     .select({
-      gross: sum(purchases.amountPaid),
+      gross: sum(amountKeptAfterRefunds),
       purchaseCount: count(purchases.id),
     })
     .from(purchases)
@@ -908,7 +909,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
     .select({
       courseId: courses.id,
       title: courses.title,
-      gross: sum(purchases.amountPaid),
+      gross: sum(amountKeptAfterRefunds),
       purchaseCount: count(purchases.id),
     })
     .from(purchases)
@@ -1635,7 +1636,7 @@ export default function InstructorAnalytics({
               <MoneyCard
                 label="Gross revenue"
                 amountCents={summary.grossCents}
-                hint={`What students paid, across ${summary.purchaseCount} ${
+                hint={`What learners paid, less refunds, across ${summary.purchaseCount} ${
                   summary.purchaseCount === 1 ? "purchase" : "purchases"
                 }.`}
               />
