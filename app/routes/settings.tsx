@@ -12,16 +12,16 @@ import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
 import {
   UserRole,
-  RefundStatus,
+  RefundRequestStatus,
   users,
   courses,
   purchases,
-  refunds,
+  refundRequests,
 } from "~/db/schema";
 import { AlertTriangle } from "lucide-react";
 import { data, isRouteErrorResponse, Link } from "react-router";
 import { db } from "~/db";
-import { and, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { formatPrice } from "~/lib/utils";
 
 const settingsSchema = z.object({
@@ -55,24 +55,23 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw data("User not found.", { status: 404 });
   }
 
-  const pendingChargebacks = db
+  // Every Refund Request the Learner has raised, open or decided, newest
+  // first. The amount shown is the Refund Amount: what they paid.
+  const refundRequestHistory = db
     .select({
-      id: refunds.id,
+      id: refundRequests.id,
+      status: refundRequests.status,
       courseTitle: courses.title,
       courseSlug: courses.slug,
-      amountPaid: purchases.amountPaid,
-      reason: refunds.reason,
-      requestedAt: refunds.requestedAt,
+      refundAmount: purchases.amountPaid,
+      reason: refundRequests.reason,
+      requestedAt: refundRequests.requestedAt,
     })
-    .from(refunds)
-    .innerJoin(purchases, eq(refunds.purchaseId, purchases.id))
+    .from(refundRequests)
+    .innerJoin(purchases, eq(refundRequests.purchaseId, purchases.id))
     .innerJoin(courses, eq(purchases.courseId, courses.id))
-    .where(
-      and(
-        eq(purchases.userId, currentUserId),
-        eq(refunds.status, RefundStatus.Requested)
-      )
-    )
+    .where(eq(purchases.userId, currentUserId))
+    .orderBy(desc(refundRequests.requestedAt), desc(refundRequests.id))
     .all();
 
   return {
@@ -83,9 +82,29 @@ export async function loader({ request }: Route.LoaderArgs) {
       bio: currentUser.bio,
       role: currentUser.role,
     },
-    pendingChargebacks,
+    refundRequestHistory,
   };
 }
+
+const REFUND_REQUEST_STATUS_BADGES: Record<
+  RefundRequestStatus,
+  { label: string; className: string }
+> = {
+  [RefundRequestStatus.Requested]: {
+    label: "Awaiting review",
+    className:
+      "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+  },
+  [RefundRequestStatus.Approved]: {
+    label: "Refund approved",
+    className:
+      "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  },
+  [RefundRequestStatus.Declined]: {
+    label: "Declined",
+    className: "bg-muted text-muted-foreground",
+  },
+};
 
 export async function action({ request }: Route.ActionArgs) {
   const currentUserId = await getCurrentUserId(request);
@@ -122,7 +141,10 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Settings({ loaderData }: Route.ComponentProps) {
-  const { user, pendingChargebacks } = loaderData;
+  const { user, refundRequestHistory } = loaderData;
+  const awaitingReviewCount = refundRequestHistory.filter(
+    (request) => request.status === RefundRequestStatus.Requested
+  ).length;
   const fetcher = useFetcher();
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -209,37 +231,44 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
         </CardContent>
       </Card>
 
-      {pendingChargebacks.length > 0 && (
+      {refundRequestHistory.length > 0 && (
         <Card className="mt-8 max-w-md">
           <CardHeader>
-            <h2 className="text-lg font-semibold">Pending Chargeback</h2>
-            <p className="text-sm text-muted-foreground">
-              {pendingChargebacks.length === 1
-                ? "One chargeback is waiting on us."
-                : `${pendingChargebacks.length} chargebacks are waiting on us.`}
-            </p>
+            <h2 className="text-lg font-semibold">Refund requests</h2>
+            {awaitingReviewCount > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {awaitingReviewCount === 1
+                  ? "One refund request is awaiting review."
+                  : `${awaitingReviewCount} refund requests are awaiting review.`}
+              </p>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
-            {pendingChargebacks.map((chargeback) => (
-              <div key={chargeback.id} className="rounded-md border p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <Link
-                    to={`/courses/${chargeback.courseSlug}`}
-                    className="font-medium hover:underline"
-                  >
-                    {chargeback.courseTitle}
-                  </Link>
-                  <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                    Pending Chargeback
-                  </span>
+            {refundRequestHistory.map((refundRequest) => {
+              const badge = REFUND_REQUEST_STATUS_BADGES[refundRequest.status];
+              return (
+                <div key={refundRequest.id} className="rounded-md border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <Link
+                      to={`/courses/${refundRequest.courseSlug}`}
+                      className="font-medium hover:underline"
+                    >
+                      {refundRequest.courseTitle}
+                    </Link>
+                    <span
+                      className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${badge.className}`}
+                    >
+                      {badge.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {formatPrice(refundRequest.refundAmount)} · requested{" "}
+                    {new Date(refundRequest.requestedAt).toLocaleDateString()}
+                  </p>
+                  <p className="mt-2 text-sm">{refundRequest.reason}</p>
                 </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {formatPrice(chargeback.amountPaid)} · raised{" "}
-                  {new Date(chargeback.requestedAt).toLocaleDateString()}
-                </p>
-                <p className="mt-2 text-sm">{chargeback.reason}</p>
-              </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
       )}
