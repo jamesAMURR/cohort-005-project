@@ -1,8 +1,30 @@
-import { Outlet } from "react-router";
+import { Outlet, useSearchParams } from "react-router";
 import type { Route } from "./+types/layout.app";
 import { Sidebar } from "~/components/sidebar";
 import { DevUI } from "~/components/dev-ui";
 import { Toaster } from "sonner";
+// PROTOTYPE: bell/Inbox variants (wayfinder ticket #10)
+import { MessageStoreProvider, useMessages } from "~/components/notifications-prototype/store";
+import {
+  VARIANTS,
+  VARIANT_NAMES,
+  VariantABell,
+  VariantBNavItem,
+  VariantCTopBar,
+} from "~/components/notifications-prototype/variants";
+import { PrototypeSwitcher } from "~/components/prototype-switcher";
+
+function PrototypeControls() {
+  const { simulateArrival, clearAll, reset } = useMessages();
+  const btn = "rounded-full px-2 py-0.5 text-xs hover:bg-white/20";
+  return (
+    <>
+      <button className={btn} onClick={simulateArrival} title="What the ~15s poll would pick up">+ New Message</button>
+      <button className={btn} onClick={clearAll}>Empty</button>
+      <button className={btn} onClick={reset}>Reset</button>
+    </>
+  );
+}
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { eq, and, or, sql, desc } from "drizzle-orm";
@@ -227,14 +249,21 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     isTeamAdmin: userIsTeamAdmin,
   } = loaderData;
 
+  const [params] = useSearchParams();
+  const variant = params.get("variant") ?? "A";
+
   return (
+    <MessageStoreProvider key={currentUser?.id ?? 0} role={currentUser?.role ?? "student"}>
     <div className="flex h-screen overflow-hidden">
       <Sidebar
         currentUser={currentUser}
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
+        headerSlot={currentUser && variant === "A" ? <VariantABell /> : undefined}
+        navTopSlot={currentUser && variant === "B" ? <VariantBNavItem /> : undefined}
       />
       <main className="flex-1 overflow-y-auto">
+        {currentUser && variant === "C" && <VariantCTopBar />}
         <Outlet />
       </main>
       <DevUI
@@ -245,6 +274,10 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         countries={countries}
       />
       <Toaster position="bottom-right" richColors closeButton />
+      <PrototypeSwitcher variants={VARIANTS} names={VARIANT_NAMES}>
+        <PrototypeControls />
+      </PrototypeSwitcher>
     </div>
+    </MessageStoreProvider>
   );
 }
