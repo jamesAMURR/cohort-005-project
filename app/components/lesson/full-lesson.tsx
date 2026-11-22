@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { formatDuration } from "~/lib/utils";
 import { YouTubePlayer } from "~/components/youtube-player";
-import { LessonBreadcrumb } from "./locked-lesson";
+import { LessonBreadcrumb } from "./lesson-breadcrumb";
 import { CurriculumSidebar } from "./curriculum-sidebar";
 import { useAutoplay } from "./use-autoplay";
 import { LessonNote } from "./lesson-note";
