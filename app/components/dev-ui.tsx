@@ -1,23 +1,23 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Form, useLocation } from "react-router";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 import type { UserRole } from "~/db/schema";
 import { ChevronDown, ChevronUp, Globe } from "lucide-react";
 
-interface DevUser {
+type DevUser = {
   id: number;
   name: string;
   role: UserRole;
-}
+};
 
-interface DevUIProps {
+type DevUIProps = {
   users: DevUser[];
   currentUser: DevUser | null;
   devCountry: string | null;
   countryTierInfo: { tier: number; discount: number; label: string };
   countries: { code: string; name: string }[];
-}
+};
 
 const roleBadgeColors: Record<string, string> = {
   admin: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
@@ -40,10 +40,36 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
-export function DevUI({ users, currentUser, devCountry, countryTierInfo, countries }: DevUIProps) {
+export function DevUI({
+  users,
+  currentUser,
+  devCountry,
+  countryTierInfo,
+  countries,
+}: DevUIProps) {
   const [minimized, setMinimized] = useState(false);
   const [open, setOpen] = useState(false);
+  const switcherRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (!switcherRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
   if (minimized) {
     return (
       <div className="fixed bottom-4 right-4 z-50">
@@ -64,7 +90,7 @@ export function DevUI({ users, currentUser, devCountry, countryTierInfo, countri
     <div className="fixed bottom-4 right-4 z-50 w-72 rounded-lg border border-dashed bg-background/90 shadow-lg backdrop-blur-sm">
       <div className="flex items-center justify-between border-b border-dashed px-3 py-2">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          DevUI
+          DevUI · {users.length} users
         </span>
         <div className="flex gap-1">
           <Button
@@ -90,7 +116,7 @@ export function DevUI({ users, currentUser, devCountry, countryTierInfo, countri
           </div>
         )}
 
-        <div className="relative">
+        <div className="relative" ref={switcherRef}>
           <Button
             size="sm"
             variant="outline"
@@ -113,6 +139,7 @@ export function DevUI({ users, currentUser, devCountry, countryTierInfo, countri
                   key={user.id}
                   method="post"
                   action={`/api/switch-user?redirectTo=${encodeURIComponent(location.pathname + location.search)}`}
+                  onSubmit={() => setOpen(false)}
                 >
                   <input type="hidden" name="userId" value={user.id} />
                   <button
@@ -144,7 +171,7 @@ export function DevUI({ users, currentUser, devCountry, countryTierInfo, countri
             <select
               name="country"
               defaultValue={devCountry ?? ""}
-              onChange={(e) => e.target.form?.requestSubmit()}
+              onChange={(event) => event.target.form?.requestSubmit()}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             >
               <option value="">Auto-detect</option>
