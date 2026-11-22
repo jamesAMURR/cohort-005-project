@@ -27,13 +27,15 @@ export function describe({
   isSaving,
   error,
 }: NoteDraftInput): NoteDraft {
-  const tooLong = body.length > maxLength;
-  // The save action rejects a blank note, so a blank draft is not savable.
-  const blank = body.trim().length === 0;
-  const dirty = body !== savedBody;
+  // The save action trims the body before it checks or stores it, so the
+  // draft is judged by what would actually be saved.
+  const trimmed = body.trim();
+  const tooLong = trimmed.length > maxLength;
+  const blank = trimmed.length === 0;
+  const dirty = trimmed !== savedBody;
 
   return {
-    length: body.length,
+    length: trimmed.length,
     tooLong,
     canSave: dirty && !blank && !tooLong && !isSaving,
     status: statusOf({ isSaving, error, dirty, savedBody }),

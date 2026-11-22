@@ -73,4 +73,21 @@ describe("describeNoteDraft", () => {
     });
     expect(draft.status).toBe("error");
   });
+
+  it("treats a draft as saved when it differs from the note only by surrounding whitespace", () => {
+    const draft = describeNoteDraft({
+      ...base,
+      body: "hello  \n",
+      savedBody: "hello",
+    });
+    expect(draft.status).toBe("saved");
+    expect(draft.canSave).toBe(false);
+  });
+
+  it("measures the draft the way the server will save it, without surrounding whitespace", () => {
+    const draft = describeNoteDraft({ ...base, body: `${"a".repeat(10)}   ` });
+    expect(draft.length).toBe(10);
+    expect(draft.tooLong).toBe(false);
+    expect(draft.canSave).toBe(true);
+  });
 });
